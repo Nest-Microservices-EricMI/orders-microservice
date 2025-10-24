@@ -23,17 +23,72 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async create(createOrderDto: CreateOrderDto) {
-    const ids = [5, 6]
-    const products = await firstValueFrom(
-      this.productsClient.send({ cmd: 'validate_products' }, ids)
-    )
+    try {
+      // 1. Confirmar los ids de los productos
+      const productIds = createOrderDto.items.map(item => item.productId);
 
-    return products
+      const products = await firstValueFrom(
+        this.productsClient.send({cmd: 'validate_products'}, productIds)
+      );
+
+      // 2. Cálculos de los valores
+      const totalAmount = createOrderDto.items.reduce((acc, orderItem) => {
+        const price = products.find(
+          (product) => product.id === orderItem.productId
+        ).price;
+        return price * orderItem.quantity;
+      }, 0);
+
+      const totalItems = createOrderDto.items.reduce((acc, orderItem) => {
+        return acc + orderItem.quantity;
+      }, 0);
+
+      // 3. Crear una transacción de base de datos
+      const order = await this.order.create({
+        data: {
+          totalAmount: totalAmount,
+          totalItems: totalItems,
+          OrderItem: {
+            createMany: {
+              data: createOrderDto.items.map((orderItem) => ({
+                price: products.find(
+                  (product) => product.id === orderItem.productId
+                ).price,
+                productId: orderItem.productId,
+                quantity: orderItem.quantity,
+              })),
+            },
+          },
+        },
+        include: {
+          OrderItem: {
+            select: {
+              price: true,
+              quantity: true,
+              productId: true,
+            },
+          },
+        },
+      });
+
+      return {
+        ...order,
+        OrderItem: order.OrderItem.map((orderItem) => ({
+          ...orderItem,
+          name: products.find((product) => product.id === orderItem.productId).name,
+        })),
+      };
+    } catch (error) {
+      console.log(error);
+      
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error creating order: ${error.message}`,
+      });
+    }
   }
 
   async findAll(orderPaginationDto: OrderPaginationDto) {
-    console.log('entando a findall');
-
     const totalPages = await this.order.count({
       where: {
         status: orderPaginationDto.status,
