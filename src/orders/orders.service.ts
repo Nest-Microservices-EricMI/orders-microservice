@@ -28,7 +28,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       const productIds = createOrderDto.items.map(item => item.productId);
 
       const products = await firstValueFrom(
-        this.productsClient.send({cmd: 'validate_products'}, productIds)
+        this.productsClient.send({ cmd: 'validate_products' }, productIds)
       );
 
       // 2. Cálculos de los valores
@@ -80,7 +80,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       };
     } catch (error) {
       console.log(error);
-      
+
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: `Error creating order: ${error.message}`,
@@ -117,7 +117,19 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   async findOne(id: string) {
     const order = await this.order.findFirst({
       where: { id },
+      include: {
+        OrderItem: {
+          select: {
+            price: true,
+            quantity: true,
+            productId: true,
+          }
+        }
+      }
     });
+
+    console.log(order);
+    
 
     if (!order) {
       // TODO: Crear una clase creadora de excepciones para no tener que poner message en cada error 
@@ -127,7 +139,18 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       })
     }
 
-    return order;
+    const productIds = order.OrderItem.map(item => item.productId);
+    const products = await firstValueFrom(
+      this.productsClient.send({ cmd: 'validate_products' }, productIds)
+    );
+
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map((orderItem) => ({
+        ...orderItem,
+        name: products.find((product) => product.id === orderItem.productId).name,
+      })),
+    }
   }
 
   async changeOrderStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
