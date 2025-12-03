@@ -23,6 +23,8 @@ async function bootstrap() {
     })
   )
 
+  logger.log('Connecting to NATS server(s)...');
+
   await app.listen();
   logger.log(`Orders microservice running on port ${envs.port}`);
 }
